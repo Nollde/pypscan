@@ -5,7 +5,7 @@ Originally developed as "pscan" by the [VISPA Group](https://vispa.physik.rwth-a
 
 Available as a Jupyter widget, a terminal UI, and a web browser UI:
 
-![output](https://github.com/user-attachments/assets/d7864b16-2a0f-4632-9fb7-75fd73730c27)
+![demo](https://github.com/user-attachments/assets/a855f520-2d35-41e7-b41f-16e8ab7dbaab)
 
 ## Install
 
