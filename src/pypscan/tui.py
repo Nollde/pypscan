@@ -27,12 +27,16 @@ from .core import Scanner, ParametricIndex
 # Image rendering via Pillow (optional)
 # ---------------------------------------------------------------------------
 
-def _render_image(path: str, width: int, height: int):
+def _render_image(path: str, width: int):
     """
-    Render an image as half-block Unicode art using Rich Text.
-    Each terminal cell row covers 2 pixel rows via the '▀' character:
-    foreground = upper pixel colour, background = lower pixel colour.
-    Returns a Rich Text object, or a plain string on error/missing dep.
+    Render an image using half-block characters (▀) with 24-bit RGB colours.
+
+    Why half-block?  Terminal character cells are ~2× taller than they are wide.
+    The '▀' trick maps 2 image pixel rows onto 1 character (upper=fg, lower=bg),
+    which exactly cancels the 2:1 cell aspect ratio and gives square effective pixels.
+
+    Scaling: fit to the available terminal width, never upscale.  Height is
+    unconstrained — the caller's widget is scrollable.
     """
     try:
         from PIL import Image
@@ -42,26 +46,26 @@ def _render_image(path: str, width: int, height: int):
     except ImportError:
         return f"[dim]Install pillow to preview images[/dim]\n{path}"
 
-    if width <= 0 or height <= 0:
+    if width <= 0:
         return path
 
     try:
         img = Image.open(path).convert("RGB")
-        # Scale to fill the available area (up OR down), maintaining aspect ratio.
-        # Each terminal row covers 2 pixel rows via the half-block '▀' character.
-        target_w = max(1, width)
-        target_h = max(1, height * 2)
         img_w, img_h = img.size
-        scale = min(target_w / img_w, target_h / img_h)
-        img = img.resize(
-            (max(1, round(img_w * scale)), max(1, round(img_h * scale))),
-            Image.LANCZOS,
-        )
+
+        # Scale down to fit terminal width, never upscale small images.
+        scale = min(1.0, width / img_w)
+        if scale < 1.0:
+            img = img.resize(
+                (max(1, round(img_w * scale)), max(1, round(img_h * scale))),
+                Image.LANCZOS,
+            )
+
         w, h = img.size
         pixels = img.load()
 
         text = Text(no_wrap=True)
-        for row in range(0, (h // 2) * 2, 2):
+        for row in range(0, h, 2):
             for col in range(w):
                 r1, g1, b1 = pixels[col, row]
                 r2, g2, b2 = pixels[col, row + 1] if row + 1 < h else (0, 0, 0)
@@ -99,6 +103,7 @@ class _OptionButton(Static):
     DEFAULT_CSS = """
     _OptionButton {
         height: 1;
+        width: auto;
         padding: 0 1;
         background: $surface-darken-1;
         color: $text-muted;
@@ -130,21 +135,18 @@ class _OptionButton(Static):
         self.post_message(self.Pressed(self))
 
 
-class _ParamPanel(Vertical):
-    """Vertical panel showing clickable option buttons for one parameter."""
+class _ParamPanel(Horizontal):
+    """One-row panel: label on the left, button strip on the right."""
 
     DEFAULT_CSS = """
     _ParamPanel {
-        width: auto;
-        height: auto;
-        min-width: 10;
-        padding: 0 1;
-        border: tall #16a34a;
+        height: 1;
+        width: 1fr;
     }
     _ParamPanel Label.param-title {
+        width: 14;
+        color: #86efac;
         text-style: bold;
-        padding-bottom: 1;
-        color: $text;
     }
     """
 
@@ -189,9 +191,10 @@ class _ContentViewer(Static):
     _ContentViewer {
         height: 1fr;
         border: tall #16a34a;
-        margin: 1 1;
-        padding: 1 2;
-        overflow: auto;
+        margin: 0;
+        padding: 0 1;
+        overflow-x: auto;
+        overflow-y: auto;
     }
     """
 
@@ -237,9 +240,8 @@ class _ContentViewer(Static):
             # content_size excludes border and padding — the true renderable area.
             # Only draw the image once we have a valid size (after first layout).
             w = self.content_size.width
-            h = self.content_size.height
-            if w > 0 and h > 4:
-                preview = _render_image(path, w, h - 4)  # 4 rows reserved for info
+            if w > 0:
+                preview = _render_image(path, w)
                 if isinstance(preview, str):
                     preview = Text.from_markup(preview)
                 self.update(Group(info, preview))
@@ -268,17 +270,25 @@ class TuiApp(App):
 
     TITLE = "PyPScan"
     CSS = """
-    App { accent-color: #16a34a; }
+    Header {
+        background: #14532d;
+        color: #86efac;
+    }
+    Footer {
+        background: #14532d;
+        color: #86efac;
+    }
 
     Screen {
         layout: vertical;
     }
     #controls {
         height: auto;
-        layout: horizontal;
+        max-height: 12;
+        layout: vertical;
         padding: 0;
-        overflow-x: auto;
-        overflow-y: hidden;
+        overflow-y: auto;
+        border-bottom: solid #16a34a;
     }
     """
 
@@ -298,7 +308,7 @@ class TuiApp(App):
         yield Header()
         options = self._index.get_options()
         self._selection = {k: v[0] for k, v in options.items() if v}
-        with Horizontal(id="controls"):
+        with Vertical(id="controls"):
             for param, values in options.items():
                 yield _ParamPanel(param, values, selected=self._selection.get(param))
         yield _ContentViewer()
