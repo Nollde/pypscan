@@ -1,6 +1,10 @@
 from functools import partial
 
-from tqdm.auto import tqdm
+try:
+    from tqdm.auto import tqdm
+except ImportError:  # pragma: no cover
+    def tqdm(iterable, **kwargs):  # type: ignore[misc]
+        return iterable
 
 
 POP_ERROR = object()
